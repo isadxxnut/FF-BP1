@@ -218,13 +218,13 @@
   }
 
   .team-name-section {
-    flex-basis: 30%; /* Allocate slightly less for name */
+    flex-basis: 20%; /* Allocate slightly less for name */
     min-width: 6.25rem; /* Use rem */
   }
 
   .players-section {
-    flex-basis: 65%; /* Allocate more space for player inputs */
-    min-width: 12.5rem; /* Use rem */
+    flex-basis: 80%; /* Allocate more space for player inputs */
+    min-width: 15rem; /* Use rem */
   }
 
 
@@ -289,14 +289,15 @@
     justify-content: space-between;
   }
 
-  .player-row input {
-    flex-basis: calc(25% - 0.4rem); /* Adjusted for 4 players */
-    flex-grow: 1;
-    min-width: 2.8125rem; /* Use rem */
-    padding: 0.3rem 0.5rem; /* Use rem */
-    font-size: 0.8rem; /* Use rem */
-    box-sizing: border-box;
-  }
+/* แก้ไข selector ตรงนี้ */
+#teamInputs .player-row input[type="text"] {
+  flex-basis: calc(25% - 0.4rem);
+  flex-grow: 1;
+  min-width: 2.8125rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.6rem; /* << ตอนนี้คุณสามารถปรับขนาดตรงนี้ได้แล้ว */
+  box-sizing: border-box;
+}
 
   /* Teams and Slots */
   .teams {
@@ -322,7 +323,7 @@
   }
 
   .slot {
-    width: 4.375rem; /* Use rem */
+    width: 6rem; /* Use rem */
     height: 6.2rem; /* Adjusted height to accommodate player dropdown */
     background: #3a3a5a;
     border: 0.125rem solid #444; /* Use rem */
@@ -377,7 +378,7 @@
   
   .slot select {
     margin-top: 0.2rem;
-    font-size: 0.6rem;
+    font-size: 0.5rem;
     width: calc(100% - 0.4rem);
     background-color: #1a1a2e;
     color: #e0e0e0;
@@ -1220,8 +1221,10 @@ document.getElementById("startBtn").onclick = () => {
 };
 
 // Event listener for "Confirm" button
+// admin.html - โค้ดใหม่
+
 document.getElementById("confirmBtn").onclick = () => {
-    // Confirming Player Assignments during Preparing phase
+    // การยืนยันการกำหนดผู้เล่นในช่วง Preparing phase (เหมือนเดิม)
     if (isPreparing) {
         slotAssignmentsRef.set(localSlotAssignments);
         updateGameState({
@@ -1232,43 +1235,52 @@ document.getElementById("confirmBtn").onclick = () => {
         return;
     }
 
-    // Confirming Pick/Ban during Drafting phase
+    // การยืนยัน Ban/Pick ในช่วง Drafting phase (ส่วนที่แก้ไข)
     const step = steps[currentStep];
     if (!step) return;
 
-    const updates = {};
-    updates.reserveA = reserveA;
-    updates.reserveB = reserveB;
+    // --- ส่วนที่แก้ไข ---
+    // 1. อ่านข้อมูลล่าสุดจาก liveSelections โดยตรงจาก Firebase ณ วินาทีที่กด Confirm
+    liveSelectionsRef.once("value", snapshot => {
+        const liveData = snapshot.val() || {};
+        
+        const updates = {};
+        updates.reserveA = reserveA;
+        updates.reserveB = reserveB;
 
-    selectedImages.forEach((charEl, i) => {
-        const slotId = step.slots[i];
-        if (charEl) {
-            const name = charEl.dataset.name;
-            const url = charEl.querySelector('img').src;
-            updates[`slots/${slotId}`] = { name: name, url: url };
+        // 2. สร้าง updates object จากข้อมูลที่เพิ่งอ่านมาสดๆ แทนที่จะใช้ selectedImages
+        step.slots.forEach(slotId => {
+            const selection = liveData[slotId];
+            if (selection && selection.name && selection.url) {
+                updates[`slots/${slotId}`] = { name: selection.name, url: selection.url };
+            } else {
+                // หากไม่มีการเลือกในช่องนั้น ให้ตั้งค่าเป็น null (เผื่อกรณีที่จำเป็น)
+                updates[`slots/${slotId}`] = null;
+            }
+        });
+
+        // 3. อัปเดตสถานะเกม (ส่วนนี้เหมือนเดิม)
+        if (currentStep + 1 >= steps.length) {
+            // จบการ Draft เข้าสู่ช่วง Preparing
+            updates.currentStep = currentStep + 1;
+            updates.isStarted = false;
+            updates.isPreparing = true;
+            updates.assignmentsConfirmed = false;
+            updates.timeLeft = 120;
         } else {
-            updates[`slots/${slotId}`] = null;
+            // ไปยัง step ถัดไป
+            updates.currentStep = currentStep + 1;
+            updates.timeLeft = 30;
+            updates.reserveMode = false;
         }
+        
+        // 4. เคลียร์ค่าและอัปเดต (ส่วนนี้เหมือนเดิม)
+        selectedImages = [];
+        document.getElementById("confirmBtn").disabled = true;
+        updateCharacterPoolVisuals();
+        updateGameState(updates);
+        liveSelectionsRef.set({}); // ล้าง live selections สำหรับเทิร์นถัดไป
     });
-
-    if (currentStep + 1 >= steps.length) {
-        // Last step of draft, transition to Preparing phase
-        updates.currentStep = currentStep + 1;
-        updates.isStarted = false;
-        updates.isPreparing = true;
-        updates.assignmentsConfirmed = false;
-        updates.timeLeft = 120;
-    } else {
-        // Proceed to next drafting step
-        updates.currentStep = currentStep + 1;
-        updates.timeLeft = 30; // Reset timer for the next turn
-        updates.reserveMode = false;
-    }
-    
-    selectedImages = [];
-    document.getElementById("confirmBtn").disabled = true;
-    updateCharacterPoolVisuals();
-    updateGameState(updates);
 };
 
 // Event listener for "Show Summary" button
