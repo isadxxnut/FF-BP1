@@ -131,6 +131,10 @@
   }
   .player-role {
     opacity: 0; /* Roles are also hidden by default */
+    transition: opacity 0.5s ease 0.3s;
+  }
+  .player-role.visible {
+      opacity: 1;
   }
 
   /* --- ปรับตำแหน่งและขนาดข้อมูลการแข่งขันได้ที่นี่ --- */
@@ -219,9 +223,10 @@ const db = firebase.database();
 // Firebase references
 const roomRef = db.ref("drafts/room1");
 const gameStateRef = roomRef.child("gameState");
+const teamDataRef = roomRef.child("teamData");
 const slotAssignmentsRef = roomRef.child("slotAssignments");
 const liveSelectionsRef = roomRef.child("liveSelections");
-const matchInfoRef = roomRef.child("matchInfo"); // New reference
+const matchInfoRef = roomRef.child("matchInfo");
 
 // Ban/Pick steps
 const steps = [
@@ -234,7 +239,11 @@ const allSlotIds = ["A0", "A1", "A2", "A3", "A4", "B0", "B1", "B2", "B3", "B4"];
 // Global state variables
 let timer = null, isStarted = false, isPreparing = false, assignmentsConfirmed = false;
 let currentStep = 0, timeLeft = 30, reserveA = 60, reserveB = 60, countdownStartTime = 0;
-let matchInfoData = {}; // To store match info locally
+
+// NEW Global Caches for instant data access
+let teamData = {};
+let assignments = {};
+let matchInfoData = {};
 
 function createElements() {
     const container = document.getElementById('element-container');
@@ -307,9 +316,72 @@ function clearAllSlots() {
         if(effectEl) effectEl.classList.remove("active");
         if(imgEl) { imgEl.innerHTML = ''; imgEl.classList.remove("confirmed"); }
         if(charNameEl) charNameEl.textContent = '';
-        if(playerNameEl) playerNameEl.textContent = '';
+        if(playerNameEl) {
+             playerNameEl.textContent = '';
+             playerNameEl.classList.remove('visible');
+        }
+        const roleEl = document.getElementById(`${id}-role`);
+        if(roleEl){
+            roleEl.classList.remove('visible');
+            roleEl.querySelector('img').src = '';
+        }
     });
 }
+
+// NEW central function to update all player-related displays (name + role)
+function updatePlayerDisplays() {
+    // Hide everything first for a clean slate
+    document.querySelectorAll(".player-name").forEach(el => {
+        el.classList.remove('visible');
+        el.textContent = ''; 
+    });
+    document.querySelectorAll(".player-role").forEach(el => {
+        el.classList.remove('visible');
+        el.querySelector('img').src = ''; 
+    });
+
+    // NEW CONDITION: Only show player names and roles AFTER assignments are confirmed.
+    if (!assignmentsConfirmed) return;
+
+    // Create a quick lookup map: "PlayerName" -> "Role_Key" (e.g., "MOSS" -> "A_0")
+    const playerToRoleKeyMap = {};
+    if (teamData.playersA) {
+        teamData.playersA.forEach((name, index) => {
+            if (name) playerToRoleKeyMap[name] = `A_${index}`;
+        });
+    }
+    if (teamData.playersB) {
+        teamData.playersB.forEach((name, index) => {
+            if (name) playerToRoleKeyMap[name] = `B_${index}`;
+        });
+    }
+
+    // Iterate through current assignments
+    for (const slotId in assignments) {
+        const playerName = assignments[slotId];
+        if (!playerName) continue;
+
+        // --- 1. Show Player Name ---
+        const playerNameEl = document.getElementById(`${slotId}-player-name`);
+        if (playerNameEl) {
+            playerNameEl.textContent = playerName;
+            playerNameEl.classList.add('visible');
+        }
+
+        // --- 2. Show Player Role (if toggled on) ---
+        if (matchInfoData.showRoles) {
+            const roleKey = playerToRoleKeyMap[playerName];
+            const roleUrl = (matchInfoData.roles || {})[roleKey] || '';
+            const roleEl = document.getElementById(`${slotId}-role`);
+            
+            if (roleEl) {
+                roleEl.querySelector('img').src = roleUrl;
+                roleEl.classList.add('visible');
+            }
+        }
+    }
+}
+
 
 // Listener for game state
 gameStateRef.on("value", snapshot => {
@@ -317,7 +389,6 @@ gameStateRef.on("value", snapshot => {
     const actionLabelElement = document.getElementById("actionLabel");
     const timerElement = document.getElementById("timer");
     const reserveElement = document.querySelector(".reserve-display");
-    const allPlayerNames = document.querySelectorAll(".player-name");
     const arrowA = document.getElementById('arrow-container-A'), arrowB = document.getElementById('arrow-container-B');
     const arrowDivA = document.getElementById('turnArrowA'), arrowDivB = document.getElementById('turnArrowB');
 
@@ -334,12 +405,20 @@ gameStateRef.on("value", snapshot => {
         timerElement.style.display = 'block';
         reserveElement.style.display = 'flex';
         timerElement.textContent = "30";
-        allPlayerNames.forEach(el => el.classList.remove('visible'));
         clearAllSlots();
         return;
     }
 
+    // This listener now primarily updates the global state flags and manages turn-based UI.
+    const wasConfirmed = assignmentsConfirmed;
     ({ isStarted, isPreparing, assignmentsConfirmed, currentStep, timeLeft, reserveA, reserveB } = gameState);
+    
+    // If the state just changed to confirmed, call the display update
+    if (assignmentsConfirmed && !wasConfirmed) {
+        updatePlayerDisplays();
+    }
+
+
     updateTimerDisplay();
     if (timer) clearInterval(timer);
 
@@ -361,8 +440,6 @@ gameStateRef.on("value", snapshot => {
     reserveElement.style.display = 'flex';
     
     if (isStarted && steps[currentStep]) { 
-        allPlayerNames.forEach(el => el.classList.remove('visible'));
-        document.querySelectorAll('.player-role').forEach(el => el.classList.remove('visible'));
         highlightSlot();
         startCountdown();
         const step = steps[currentStep];
@@ -372,8 +449,6 @@ gameStateRef.on("value", snapshot => {
         activeArrowContainer.style.display = 'block';
         activeArrowDiv.classList.add(isBan ? 'arrow-ban' : 'arrow-pick');
     } else if (isPreparing) {
-        allPlayerNames.forEach(el => el.classList.remove('visible'));
-        document.querySelectorAll('.player-role').forEach(el => el.classList.remove('visible'));
         actionLabelElement.textContent = "SELECT PLAYER";
         actionLabelElement.classList.add('label-select-player');
         document.querySelectorAll(".slot-effect").forEach(el => el.classList.remove("active"));
@@ -385,21 +460,21 @@ gameStateRef.on("value", snapshot => {
         timerElement.style.display = 'none';
         reserveElement.style.display = 'none';
         document.querySelectorAll(".slot-effect").forEach(el => el.classList.remove("active"));
-        allPlayerNames.forEach(el => el.classList.add('visible'));
-        if (matchInfoData.showRoles) {
-            document.querySelectorAll('.player-role').forEach(el => el.classList.add('visible'));
-        }
     }
 });
 
+// Listener for team data
+teamDataRef.on("value", snapshot => {
+    teamData = snapshot.val() || {};
+    updatePlayerDisplays();
+});
+
+
 // Listener for player assignments
 slotAssignmentsRef.on("value", snapshot => {
-    const assignments = snapshot.val() || {};
-    document.querySelectorAll(".player-name").forEach(el => el.textContent = "");
-    for(const slotId in assignments) {
-        const playerNameEl = document.getElementById(`${slotId}-player-name`);
-        if(playerNameEl) playerNameEl.textContent = assignments[slotId];
-    }
+    assignments = snapshot.val() || {};
+    // This is now the primary trigger for showing names and roles correctly.
+    updatePlayerDisplays();
 });
 
 // Listener for live selections
@@ -427,11 +502,11 @@ liveSelectionsRef.on("value", snapshot => {
     }
 });
 
-// NEW Listener for match info
+// Listener for match info (including roles and visibility toggles)
 matchInfoRef.on("value", snapshot => {
     matchInfoData = snapshot.val() || {};
     
-    // Update content
+    // Update simple display elements
     document.getElementById('teamANameOverlay').textContent = matchInfoData.teamAName || '';
     document.getElementById('teamBNameOverlay').textContent = matchInfoData.teamBName || '';
     document.getElementById('teamAScoreOverlay').textContent = matchInfoData.teamAScore || 0;
@@ -440,17 +515,7 @@ matchInfoRef.on("value", snapshot => {
     document.getElementById('teamBLogoOverlay').querySelector('img').src = matchInfoData.teamBLogoUrl || '';
     document.getElementById('teamAFlagOverlay').querySelector('img').src = matchInfoData.teamAFlagUrl || '';
     document.getElementById('teamBFlagOverlay').querySelector('img').src = matchInfoData.teamBFlagUrl || '';
-    
-    if (matchInfoData.roles) {
-        for (const slotId in matchInfoData.roles) {
-            const roleImgEl = document.getElementById(`${slotId}-role`)?.querySelector('img');
-            if (roleImgEl) {
-                roleImgEl.src = matchInfoData.roles[slotId] || '';
-            }
-        }
-    }
 
-    // Update visibility
     const mainInfoElements = document.querySelectorAll('#teamANameOverlay, #teamBNameOverlay, #teamAScoreOverlay, #teamBScoreOverlay, #teamALogoOverlay, #teamBLogoOverlay, #teamAFlagOverlay, #teamBFlagOverlay');
     if (matchInfoData.showInfo) {
         mainInfoElements.forEach(el => el.classList.add('visible'));
@@ -458,12 +523,8 @@ matchInfoRef.on("value", snapshot => {
         mainInfoElements.forEach(el => el.classList.remove('visible'));
     }
 
-    const roleElements = document.querySelectorAll('.player-role');
-    if (matchInfoData.showRoles && assignmentsConfirmed) {
-        roleElements.forEach(el => el.classList.add('visible'));
-    } else {
-        roleElements.forEach(el => el.classList.remove('visible'));
-    }
+    // After updating the cache, re-render player displays
+    updatePlayerDisplays();
 });
 
 
@@ -472,3 +533,4 @@ window.onload = createElements;
 </script>
 </body>
 </html>
+
