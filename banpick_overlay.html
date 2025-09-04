@@ -112,6 +112,68 @@
   @keyframes lightning-flicker { 0%, 100% { border-color: rgba(255, 215, 0, 0.8); box-shadow: 0 0 1.5rem rgba(255, 215, 0, 0.9); } 50% { border-color: rgba(255, 225, 100, 1); box-shadow: 0 0 2.5rem rgba(255, 225, 100, 1); } 52% { border-color: rgba(255, 215, 0, 0.7); box-shadow: 0 0 1rem rgba(255, 215, 0, 0.8); } 55% { border-color: rgba(255, 225, 100, 1); box-shadow: 0 0 2rem rgba(255, 225, 100, 1); } }
   @keyframes flashing { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 
+/* === START: โค้ดสำหรับแสดงกล่องข้อความ Banned === */
+
+/* 1. ซ่อนกล่องข้อความไว้เป็นค่าเริ่มต้น */
+#A0-img::after,
+#B0-img::after {
+    content: 'BANNED';
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0; /* ซ่อนไว้ก่อน */
+    transition: opacity 0.3s ease-in-out; /* ทำให้การปรากฏตัวนุ่มนวล */
+    pointer-events: none; /* ทำให้คลิกทะลุได้ */
+    z-index: 8; /* ตั้งค่าให้อยู่เหนือรูปภาพ (z-index: 6) */
+}
+
+/* 2. เมื่อมีการยืนยัน (มีคลาส .confirmed) ให้แสดงกล่องข้อความ */
+#A0-img.confirmed::after,
+#B0-img.confirmed::after {
+    opacity: 1; /* ทำให้มองเห็น */
+}
+
+/* 3. ส่วนสำหรับปรับแต่งตำแหน่ง ขนาด และหน้าตาได้อย่างอิสระ */
+/* คุณสามารถแก้ไขค่าต่างๆ ในนี้ได้ตามต้องการ */
+#A0-img::after {
+    /* --- ตำแหน่งและขนาดของกล่องข้อความ A0 --- */
+    top: 3.2%;                 /* ตำแหน่งแนวตั้ง (50% คือกึ่งกลาง) */
+    left: 34%;                /* ตำแหน่งแนวนอน (50% คือกึ่งกลาง) */
+    transform: translate(-50%, -50%); /* ช่วยจัดให้อยู่กึ่งกลางเป๊ะๆ */
+    width: 100%;              /* ความกว้างของกล่อง */
+    height: 4rem;             /* ความสูงของกล่อง */
+
+    /* --- หน้าตาของกล่องข้อความและตัวอักษร A0 --- */
+    
+    color: rgba(189, 21, 21, 0.85);             /* สีตัวอักษร */
+    font-size: 1.2rem;        /* ขนาดตัวอักษร */
+    font-weight: 900;         /* ความหนาตัวอักษร */
+    text-shadow: 2px 2px 5px black; /* เพิ่มเงาให้ข้อความ */
+    letter-spacing: 0.1rem;   /* ระยะห่างระหว่างตัวอักษร */
+
+}
+
+#B0-img::after {
+    /* --- ตำแหน่งและขนาดของกล่องข้อความ B0 --- */
+    top: 3.2%;
+    left: 66%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 4rem;
+
+    /* --- หน้าตาของกล่องข้อความและตัวอักษร B0 --- */
+    
+    color: rgba(189, 21, 21, 0.85); 
+    font-size: 1.2rem;
+    font-weight: 900;
+    text-shadow: 2px 2px 5px black;
+    letter-spacing: 0.1rem;
+
+}
+
+/* === END: โค้ดสำหรับแสดงกล่องข้อความ Banned === */
+  
   /* =========================================================================
   === NEW MATCH INFO STYLES ===
   ========================================================================= */
